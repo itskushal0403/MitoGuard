@@ -37,7 +37,7 @@ def main():
     system = f"yolo+{tag_}" + ("+stack" if args.mode == "stack" else "")
     folds = pd.read_csv(os.path.join(ROOT, "results", "folds.csv"))
     row = folds[(folds.protocol == protocol) & (folds.fold == name) & (folds.system == system)].iloc[0]
-    cases = pd.read_csv(os.path.join(ROOT, "results", "cases.csv"))
+    cases = pd.read_csv(os.path.join(ROOT, "results", "cases.csv.gz"))
     val = cases[(cases.protocol == protocol) & (cases.fold == name) & (cases.system == system) & (cases.split == "val")]
     y = large_error_label(val["count"], val["n_gt"], 0.2)
     fpr, tpr, thr = roc_curve(y, val["u_var"])

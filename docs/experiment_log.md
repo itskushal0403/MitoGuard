@@ -44,3 +44,15 @@ Chronological notes on decisions and negative results (things tried and not adop
 - **Observation.** On held-out tumours precision stays high (~0.84) while recall drops (~0.66): the domain
   shift mainly makes true mitoses look *less* mitotic to every model, so a threshold tuned in-domain is
   too strict. Label-free threshold adaptation is future work.
+- **Final pass (all 24 detectors).** The crop bank was rebuilt with the candidates of all 24 Stage 1 models
+  and every Stage 2 filter retrained. Small shifts from the 17-run interim pass (e.g. Phikon-v2 LOTO mean
+  F1 0.764 -> 0.758; it now beats the baseline on 6/7 folds instead of 7/7) give a sense of run-to-run
+  noise: about +-0.005 F1 per fold. Phikon (ViT-B) and Phikon-v2 (ViT-L) are within that noise of each
+  other. The headline system stays the one fixed in advance (Phikon-v2); Phikon is reported alongside.
+- **Stain augmentation.** No consistent effect on LOTO (YOLO -0.008 +- 0.012). On the Aperio CS2 LOSO
+  fold the augmented detector's candidate-pool recall collapsed (0.49 vs 0.77 without augmentation;
+  precision ~0.98 in both), on both breast cancer and mast cell tumour. Single-seed result: worth
+  re-running with several seeds before drawing conclusions.
+- **Comparison with literature.** MIDOG++ paper (RetinaNet, Table 6) leave-one-out F1 on the official test
+  regions: mean 0.666. Ours on the same regions: YOLO11 0.738, + Phikon 0.756, + Phikon-v2 0.746. See README
+  for the caveats (more training data in our LOTO folds; 5-model CV averages in the paper).

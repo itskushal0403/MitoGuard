@@ -87,7 +87,7 @@ def main():
     style()
     os.makedirs(FIG, exist_ok=True)
     folds = pd.read_csv(os.path.join(RES, "folds.csv"))
-    cases = pd.read_csv(os.path.join(RES, "cases.csv"))
+    cases = pd.read_csv(os.path.join(RES, "cases.csv.gz"))
     cases = cases[cases.split == "test"]  # validation rows are only used to pick the demo's flag threshold
     systems = [s for s, _, _ in SYSTEMS if s in set(folds.system)]
     out = ["# MitoGuard results", "",

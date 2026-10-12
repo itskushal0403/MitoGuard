@@ -7,7 +7,7 @@ W=$MITOGUARD_WORK; L=$W/logs
 python scripts/embed_crops.py --bank-only --rebuild-bank
 ALL=$(ls $W/cands | sed 's/\.pkl$//' | tr '\n' ' ')
 STAIN=$(ls $W/cands | grep _stain | sed 's/\.pkl$//' | tr '\n' ' ')
-GPU="-p ${PART:-test} --gres=gpu:1 -c 12 --mem=48G -t 00:55:00"
+GPU="-p ${PART:-test} --exclude=cn07 --gres=gpu:1 -c 12 --mem=48G -t 00:55:00"
 emb() { sbatch --parsable $GPU --job-name=emb -o $L/emb_%j.out --wrap "source slurm/env.sh; python scripts/embed_crops.py --backbones $1"; }
 E1=$(emb "phikon2-z112-ctr"); E2=$(emb "phikon-z112-ctr phikon"); E3=$(emb "resnet50 resnet50-z112")
 s2() { sbatch --parsable $GPU -d afterok:$1 --job-name=s2 -o $L/s2_%j.out --wrap "source slurm/env.sh; $2"; }

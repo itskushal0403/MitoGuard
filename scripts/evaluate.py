@@ -7,7 +7,7 @@ Systems (per fold):
 
 Every threshold (detection and Platt calibration) is fitted on the fold's validation cases, which
 come from the training domains only.  Metrics are computed on the held-out domain.
-Outputs results/folds.csv (one row per fold x system) and results/cases.csv (one row per case).
+Outputs results/folds.csv (one row per fold x system) and results/cases.csv.gz (one row per case).
 """
 import argparse
 import os
@@ -140,7 +140,7 @@ def main():
             fold_rows += fr
             case_rows += cr
     pd.DataFrame(fold_rows).to_csv(os.path.join(RESULTS, "folds.csv"), index=False)
-    pd.DataFrame(case_rows).to_csv(os.path.join(RESULTS, "cases.csv"), index=False)
+    pd.DataFrame(case_rows).to_csv(os.path.join(RESULTS, "cases.csv.gz"), index=False)
 
 
 if __name__ == "__main__":
