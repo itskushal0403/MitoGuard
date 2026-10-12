@@ -56,3 +56,24 @@ Chronological notes on decisions and negative results (things tried and not adop
 - **Comparison with literature.** MIDOG++ paper (RetinaNet, Table 6) leave-one-out F1 on the official test
   regions: mean 0.666. Ours on the same regions: YOLO11 0.738, + Phikon 0.756, + Phikon-v2 0.746. See README
   for the caveats (more training data in our LOTO folds; 5-model CV averages in the paper).
+
+## v2 (extension, 2026-10-13)
+
+- **Bottleneck analysis.** Under domain shift the v1 system is precise (~0.87) but misses mitoses
+  (recall ~0.68) while the candidate pool still contains ~96% of them: the classifier is the bottleneck.
+- **Detector union (adopted).** Each fold already had two Stage 1 detectors (with / without stain
+  augmentation). Merging their candidates (8 px, max of class scores) and widening the pool to any box with
+  max(p_mitosis, p_imposter) >= 0.05 raises the held-out recall ceiling: HNET 0.922 -> 0.980,
+  CS2 0.892 -> 0.966, 3DH 0.781 -> 0.889, CLC 0.967 -> 0.994.
+- **Label-shift EM (Saerens et al. 2002), rejected.** Re-estimating the mitosis prior per region or per
+  site lowered F1 on HNET (stack 0.733 -> 0.694 per region, 0.654 per site; precision up to 0.97, recall
+  down to 0.49). The shift is a *covariate* shift: true mitoses look less mitotic in the new domain, so
+  their scores fall and EM reads that as fewer mitoses, pushing posteriors further down. Kept as a
+  documented negative result. Motivates adapting the classifier itself (self-training) instead.
+- **Clinical metrics on v1 (LOTO, 503 regions).** Count CCC 0.92, Spearman 0.92, quadratic kappa on
+  <=7 / 8-14 / >=15 categories 0.86. Normalised split-conformal 90% intervals reach 0.80 coverage on unseen
+  tumours (naive Poisson-binomial +-1.645 sigma: 0.54). Regions whose interval does not straddle a category
+  cut-off have 99% category accuracy; the flag catches 97-99% of category errors but flags ~56% of regions.
+- **Backbone throughput (LoRA r=16, bf16, A30, batch 64).** Phikon ViT-B 510 img/s, Lunit ViT-S/8 305 img/s,
+  Phikon-v2 ViT-L 174 img/s; Kaiko Midnight ViT-g did not finish the benchmark in 14 min (too heavy for the
+  24 h budget across 12 folds).

@@ -17,6 +17,17 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mitoguard.pipeline import MitoGuard  # noqa: E402
+from mitoguard.pipeline_v2 import MitoGuardV2  # noqa: E402
+
+
+def load_model(bundle):
+    import torch
+    version = torch.load(bundle, map_location="cpu", weights_only=False).get("version", 1)
+    return MitoGuardV2(bundle) if version == 2 else MitoGuard(bundle)
+
+
+def prob(res):
+    return res.p_final if hasattr(res, "p_final") else res.p_filter
 from mitoguard.tiling import crop_centered  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -66,8 +77,8 @@ def render(img, res, show_rejected=True, min_p_yolo=0.3):
 
 def gallery(img, res, kept=True, k=12):
     idx = np.where(res.kept if kept else (~res.kept & (res.p_yolo >= 0.3)))[0]
-    idx = idx[np.argsort(-(res.p_filter if kept else res.p_yolo)[idx])][:k]
-    return [(crop_centered(img, *res.xy[i], 128), f"filter p={res.p_filter[i]:.2f} | YOLO p={res.p_yolo[i]:.2f}") for i in idx]
+    idx = idx[np.argsort(-(prob(res) if kept else res.p_yolo)[idx])][:k]
+    return [(crop_centered(img, *res.xy[i], 128), f"MitoGuard p={prob(res)[i]:.2f} | YOLO p={res.p_yolo[i]:.2f}") for i in idx]
 
 
 def build(model: MitoGuard):
@@ -95,15 +106,26 @@ def live_tab(model):
         img = load_image(path)
         res = model(img)
         n_rej = int((~res.kept & (res.p_yolo >= 0.3)).sum())
-        flag = ("**FLAGGED for pathologist review** - many borderline candidates relative to the count"
-                if res.flagged else "Count looks reliable (no flag)")
         u = res.reliability
-        md = (f"### Mitotic count: **{res.count}**\n"
-              f"- Imposters rejected by Stage 2 (YOLO p >= 0.3): **{n_rej}**\n"
-              f"- Expected count (sum of probabilities): {u['soft_count']:.1f}\n"
-              f"- Uncertainty score  sum p(1-p) / count = **{u['u_var']:.3f}** (flag threshold {model.flag_thr:.3f})\n"
-              f"- {flag}\n"
-              f"- Region size: {img.shape[1]} x {img.shape[0]} px")
+        if hasattr(res, "interval"):  # v2: conformal interval + category + grade-ambiguity flag
+            lo, hi = res.interval
+            flag = ("**Grade-ambiguous: pathologist review advised.** The 90% interval crosses a category cut-off."
+                    if res.ambiguous else "Category is unambiguous at 90% confidence.")
+            md = (f"### Mitotic count: **{res.count}**  (90% interval {lo:.0f} - {hi:.0f})\n"
+                  f"- Mitotic-count category (per ~2 mm^2 region): **{res.category}**\n"
+                  f"- {flag}\n"
+                  f"- Imposters rejected (YOLO p >= 0.3, MitoGuard below threshold): **{n_rej}**\n"
+                  f"- Expected count (sum of probabilities): {u['soft_count']:.1f}; uncertainty sum p(1-p)/count = {u['u_var']:.3f}\n"
+                  f"- Region size: {img.shape[1]} x {img.shape[0]} px (expects ~0.25 um/px, 40x)")
+        else:
+            flag = ("**FLAGGED for pathologist review** - many borderline candidates relative to the count"
+                    if res.flagged else "Count looks reliable (no flag)")
+            md = (f"### Mitotic count: **{res.count}**\n"
+                  f"- Imposters rejected by Stage 2 (YOLO p >= 0.3): **{n_rej}**\n"
+                  f"- Expected count (sum of probabilities): {u['soft_count']:.1f}\n"
+                  f"- Uncertainty score  sum p(1-p) / count = **{u['u_var']:.3f}** (flag threshold {model.flag_thr:.3f})\n"
+                  f"- {flag}\n"
+                  f"- Region size: {img.shape[1]} x {img.shape[0]} px")
         return render(img, res, show_rejected), md, gallery(img, res, True), gallery(img, res, False)
 
     with gr.Row():
@@ -125,9 +147,10 @@ def live_tab(model):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bundle", default=os.environ.get("MITOGUARD_BUNDLE", "checkpoints/mitoguard_bundle.pt"))
+    default_bundle = "checkpoints/mitoguard_v2_bundle.pt" if os.path.exists("checkpoints/mitoguard_v2_bundle.pt") else "checkpoints/mitoguard_bundle.pt"
+    ap.add_argument("--bundle", default=os.environ.get("MITOGUARD_BUNDLE", default_bundle))
     ap.add_argument("--share", action="store_true")
     ap.add_argument("--port", type=int, default=7860)
     args = ap.parse_args()
-    build(MitoGuard(args.bundle)).launch(share=args.share, server_name="0.0.0.0", server_port=args.port,
+    build(load_model(args.bundle)).launch(share=args.share, server_name="0.0.0.0", server_port=args.port,
                                         allowed_paths=[RESULTS, EXAMPLES])

@@ -30,6 +30,7 @@ def work(cid):
     mm = np.load(os.path.join(D, "crops224.npy.tmp"), mmap_mode="r+")
     mm[a:b] = np.stack([crop_centered(img, x, y, SIZE) for x, y in bank[cid]])
     mm.flush()
+    open(os.path.join(D, "crops224.done", str(cid)), "w").close()  # resumable: one marker per finished case
     return cid
 
 
@@ -39,12 +40,23 @@ def main():
     args = ap.parse_args()
     off = pickle.load(open(os.path.join(D, "offsets.pkl"), "rb"))
     total = max(b for _, b in off.values())
-    np.lib.format.open_memmap(os.path.join(D, "crops224.npy.tmp"), mode="w+", dtype=np.uint8, shape=(total, SIZE, SIZE, 3)).flush()
+    tmp = os.path.join(D, "crops224.npy.tmp")
+    os.makedirs(os.path.join(D, "crops224.done"), exist_ok=True)
+    if not os.path.exists(tmp):
+        np.lib.format.open_memmap(tmp, mode="w+", dtype=np.uint8, shape=(total, SIZE, SIZE, 3)).flush()
+    done = {int(f) for f in os.listdir(os.path.join(D, "crops224.done"))}
+    if not done:  # job killed before markers existed: a case is done if its first and last crops are written
+        mm = np.load(tmp, mmap_mode="r")
+        done = {c for c, (a, b) in off.items() if a == b or (mm[a].any() and mm[b - 1].any())}
+    todo = [c for c in sorted(off) if c not in done]
+    print(f"{len(done)} cases already cached, {len(todo)} to go", flush=True)
     with Pool(args.workers) as pool:
-        for i, cid in enumerate(pool.imap_unordered(work, sorted(off))):
+        for i, cid in enumerate(pool.imap_unordered(work, todo)):
             if i % 50 == 0:
                 print(f"[{i + 1}/{len(off)}] case {cid}", flush=True)
-    os.replace(os.path.join(D, "crops224.npy.tmp"), os.path.join(D, "crops224.npy"))
+    os.replace(tmp, os.path.join(D, "crops224.npy"))
+    import shutil
+    shutil.rmtree(os.path.join(D, "crops224.done"))
     print("cached", total, "crops")
 
 

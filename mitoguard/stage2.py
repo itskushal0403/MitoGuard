@@ -18,6 +18,7 @@ POOLS = {
     # Stage 1 candidate pool definitions: which detections Stage 2 gets to see
     "m05": lambda c: c["p_mit"] >= 0.05,  # mitosis score only (default)
     "m05i10": lambda c: (c["p_mit"] >= 0.05) | (c["p_imp"] >= 0.10),  # + boxes YOLO called "imposter"
+    "a05": lambda c: np.maximum(c["p_mit"], c["p_imp"]) >= 0.05,  # any class (widest; for strong filters)
 }
 
 
