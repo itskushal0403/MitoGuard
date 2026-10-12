@@ -40,8 +40,10 @@ def main():
     args = ap.parse_args()
     out_dir = os.path.join(WORK_ROOT, "cands")
     os.makedirs(out_dir, exist_ok=True)
+    # finished = DONE marker without a PENDING marker (PENDING = queued/claimed in slurm/queue_worker.sh)
     runs = args.runs or sorted(os.path.basename(os.path.dirname(p))
-                               for p in glob.glob(os.path.join(WORK_ROOT, "yolo", "*", "DONE")))
+                               for p in glob.glob(os.path.join(WORK_ROOT, "yolo", "*", "DONE"))
+                               if not os.path.exists(os.path.join(os.path.dirname(p), "PENDING")))
     runs = [r for r in runs if args.overwrite or not os.path.exists(os.path.join(out_dir, r + ".pkl"))]
     print("runs:", runs, flush=True)
     if not runs:

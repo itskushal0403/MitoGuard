@@ -23,8 +23,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mitoguard.data import WORK_ROOT, load_cases, make_folds  # noqa: E402
 from mitoguard.metrics import best_threshold, evaluate_set, label_candidates, large_error_label, safe_auroc  # noqa: E402
 from mitoguard.reliability import region_scores  # noqa: E402
+from mitoguard.stage2 import apply_stacker, fit_stacker, in_pool, s2_name  # noqa: E402
 
-POOL_THR = 0.05
 RESULTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "results")
 
 
@@ -33,40 +33,55 @@ def platt(scores_val, labels_val):
     return lambda s: lr.predict_proba(np.log(np.clip(s, 1e-6, 1))[:, None])[:, 1] if len(s) else s
 
 
-def systems_for(tag, backbones):
+def systems_for(tag, backbones, pools=("m05",)):
+    """(system name, yolo run, feature spec or None, mode, candidate pool)."""
     out = []
     for variant in ("stain", "nostain"):
         run = f"{tag}_{variant}"
         if not os.path.exists(os.path.join(WORK_ROOT, "cands", run + ".pkl")):
             continue
         sfx = "" if variant == "stain" else "_nostain"
-        out.append((f"yolo{sfx}", run, None, "yolo"))
+        out.append((f"yolo{sfx}", run, None, "yolo", "m05"))
         for bb in backbones:
-            if os.path.exists(os.path.join(WORK_ROOT, "stage2", f"{run}__{bb}.pkl")):
-                out.append((f"yolo+{bb}{sfx}", run, bb, "filter"))
-                out.append((f"yolo+{bb}+fused{sfx}", run, bb, "fused"))  # sqrt(p_yolo * p_filter)
+            for pool in pools:
+                if os.path.exists(os.path.join(WORK_ROOT, "stage2", s2_name(run, bb, pool) + ".pkl")):
+                    tag_ = bb if pool == "m05" else f"{bb}@{pool}"
+                    out.append((f"yolo+{tag_}{sfx}", run, bb, "filter", pool))
+                    out.append((f"yolo+{tag_}+fused{sfx}", run, bb, "fused", pool))  # sqrt(p_yolo * p_filter)
+                    out.append((f"yolo+{tag_}+stack{sfx}", run, bb, "stack", pool))  # learned on validation candidates
     return out
 
 
 def eval_fold(job):
-    protocol, fold, backbones = job
+    protocol, fold, backbones, pools = job
     cases = load_cases()
     fold_rows, case_rows = [], []
-    for system, run, bb, mode in systems_for(fold.tag, backbones):
+    for system, run, bb, mode, pool_name in systems_for(fold.tag, backbones, pools):
         cands = pickle.load(open(os.path.join(WORK_ROOT, "cands", run + ".pkl"), "rb"))
-        s2 = pickle.load(open(os.path.join(WORK_ROOT, "stage2", f"{run}__{bb}.pkl"), "rb"))["scores"] if bb else None
+        s2 = pickle.load(open(os.path.join(WORK_ROOT, "stage2", s2_name(run, bb, pool_name) + ".pkl"), "rb"))["scores"] if bb else None
         # detection score and (for reliability) per-member scores, aligned with the candidate pool
         dets, members = {}, {}
         for cid in fold.val + fold.test:
             c = cands[cid]
-            pool = c["p_mit"] >= POOL_THR
+            pool = in_pool(c, pool_name)
             score = {"yolo": lambda: c["p_mit"][pool], "filter": lambda: s2[cid]["p2"][pool],
-                     "fused": lambda: np.sqrt(c["p_mit"][pool] * s2[cid]["p2"][pool])}[mode]()
-            dets[cid] = {"xy": c["xy"][pool], "score": score}
+                     "fused": lambda: np.sqrt(c["p_mit"][pool] * s2[cid]["p2"][pool]),
+                     "stack": lambda: s2[cid]["p2"][pool]}[mode]()
+            dets[cid] = {"xy": c["xy"][pool], "score": score, "p_mit": c["p_mit"][pool], "p_imp": c["p_imp"][pool]}
             members[cid] = s2[cid]["p2_members"][pool] if mode == "filter" else None
+        if mode == "stack":
+            # 3-feature logistic regression fitted on validation candidates, where YOLO's scores are
+            # out-of-sample (on its own training cases YOLO is over-confident, so fitting there would leak)
+            cat = lambda k: np.concatenate([dets[c][k] for c in fold.val])  # noqa: E731
+            yv = np.concatenate([label_candidates(c, dets[c]["xy"]) == 1 for c in fold.val]).astype(int)
+            lr = fit_stacker(cat("score"), cat("p_mit"), cat("p_imp"), yv)
+            os.makedirs(os.path.join(WORK_ROOT, "stackers"), exist_ok=True)
+            pickle.dump(lr, open(os.path.join(WORK_ROOT, "stackers", f"{fold.tag}__{system}.pkl"), "wb"))
+            for d in dets.values():
+                d["score"] = apply_stacker(lr, d["score"], d["p_mit"], d["p_imp"])
         thr, val_f1 = best_threshold(dets, fold.val)
         # calibrated probabilities for the reliability score (Stage 2 is already Platt-calibrated)
-        if mode == "filter":
+        if mode in ("filter", "stack"):  # already calibrated probabilities
             cal = lambda s: s  # noqa: E731
             cal_thr = thr
         else:
@@ -114,10 +129,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--protocols", nargs="+", default=["loto", "loso", "indomain"])
     ap.add_argument("--backbones", nargs="+", default=["phikon", "phikon2", "resnet50", "uni"])
+    ap.add_argument("--pools", nargs="+", default=["m05"])
     ap.add_argument("--workers", type=int, default=12)
     args = ap.parse_args()
     os.makedirs(RESULTS, exist_ok=True)
-    jobs = [(p, f, args.backbones) for p in args.protocols for f in make_folds(p)]
+    jobs = [(p, f, args.backbones, args.pools) for p in args.protocols for f in make_folds(p)]
     fold_rows, case_rows = [], []
     with Pool(min(args.workers, len(jobs))) as pool:
         for fr, cr in pool.imap(eval_fold, jobs):

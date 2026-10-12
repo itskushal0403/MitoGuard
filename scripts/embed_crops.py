@@ -53,14 +53,20 @@ def build_bank():
 
 
 class Crops(Dataset):
-    def __init__(self, bank, size):
+    """Per-case stack of 224 px crops, from the crop cache (cache_crops.py) if present, else from the TIFF."""
+
+    def __init__(self, bank, size, cache=None, offsets=None):
         self.ids, self.bank, self.size = sorted(bank), bank, size
+        self.cache, self.offsets = cache, offsets
 
     def __len__(self):
         return len(self.ids)
 
     def __getitem__(self, i):
         cid = self.ids[i]
+        if self.cache is not None:
+            a, b = self.offsets[cid]
+            return cid, np.load(self.cache, mmap_mode="r")[a:b].copy()
         img = read_region(image_path(cid))
         xy = self.bank[cid]
         crops = np.stack([crop_centered(img, x, y, self.size) for x, y in xy]) if len(xy) else np.zeros((0, self.size, self.size, 3), np.uint8)
@@ -73,6 +79,8 @@ def main():
     ap.add_argument("--size", type=int, default=224)
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--rebuild-bank", action="store_true")
+    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--bank-only", action="store_true", help="(re)build the crop bank and exit")
     args = ap.parse_args()
     out = os.path.join(WORK_ROOT, "bank")
     os.makedirs(out, exist_ok=True)
@@ -80,6 +88,8 @@ def main():
     if args.rebuild_bank or not os.path.exists(bank_file):
         bank = build_bank()
         pickle.dump(bank, open(bank_file, "wb"))
+        for f in glob.glob(os.path.join(out, "*.npy")):  # features and crop cache are tied to the old bank
+            os.remove(f)
     bank = pickle.load(open(bank_file, "rb"))
     total = sum(len(v) for v in bank.values())
     print(f"bank: {total} crops over {len(bank)} cases", flush=True)
@@ -88,12 +98,21 @@ def main():
         offsets[cid] = (s, s + len(bank[cid]))
         s += len(bank[cid])
     pickle.dump(offsets, open(os.path.join(out, "offsets.pkl"), "wb"))
+    if args.bank_only:
+        return
 
     suffix = "" if args.size == 224 else f"_{args.size}"
-    models = {b: Backbone(b) for b in args.backbones}
+    todo = [b for b in args.backbones if not os.path.exists(os.path.join(out, f"{b}{suffix}.npy"))]
+    print("embedding:", todo, flush=True)
+    if not todo:
+        return
+    models = {b: Backbone(b) for b in todo}
     feats = {b: np.lib.format.open_memmap(os.path.join(out, f"{b}{suffix}.npy.tmp"), mode="w+", dtype=np.float16,
                                           shape=(total, models[b].dim)) for b in models}
-    loader = DataLoader(Crops(bank, args.size), batch_size=None, num_workers=8, prefetch_factor=2)
+    cache = os.path.join(out, "crops224.npy")
+    cache = cache if args.size == 224 and os.path.exists(cache) and np.load(cache, mmap_mode="r").shape[0] == total else None
+    print("crop cache:", cache, flush=True)
+    loader = DataLoader(Crops(bank, args.size, cache, offsets), batch_size=None, num_workers=args.workers, prefetch_factor=2)
     t0 = time.time()
     for i, (cid, crops) in enumerate(loader):
         crops = crops.numpy()

@@ -10,7 +10,7 @@ import torch
 from .detector import CandidateDetector
 from .features import Backbone
 from .reliability import region_scores
-from .stage2 import ImposterFilter
+from .stage2 import ImposterFilter, apply_stacker, in_pool
 from .tiling import crop_centered
 
 
@@ -38,12 +38,13 @@ class MitoGuard:
         self.detector = CandidateDetector(yolo, device=dev)
         self.backbone = Backbone(b["backbone"], device=dev)
         self.filter = ImposterFilter.from_state(b["filter"], device=dev)
-        self.pool_thr, self.det_thr, self.flag_thr = b["pool_thr"], b["det_thr"], b["flag_thr"]
+        self.pool, self.stacker = b["pool"], b.get("stacker")
+        self.det_thr, self.flag_thr = b["det_thr"], b["flag_thr"]
 
     def __call__(self, img: np.ndarray, batch: int = 128) -> Result:
         c = self.detector.detect(img)
-        pool = c["p_mit"] >= self.pool_thr
-        xy, p_yolo = c["xy"][pool], c["p_mit"][pool]
+        pool = in_pool(c, self.pool)
+        xy, p_yolo, p_imp = c["xy"][pool], c["p_mit"][pool], c["p_imp"][pool]
         p2 = np.zeros(len(xy), np.float32)
         members = np.zeros((len(xy), self.filter.n_models), np.float32)
         if len(xy):
@@ -52,6 +53,9 @@ class MitoGuard:
                 crops = np.stack([crop_centered(img, x, y, 224) for x, y in xy[k:k + batch]])
                 feats.append(self.backbone(crops))
             p2, members = self.filter.predict(np.concatenate(feats))
+            if self.stacker is not None:  # learned fusion with YOLO's class scores
+                p2 = apply_stacker(self.stacker, p2, p_yolo, p_imp)
+                members = None
         rel = region_scores(p2, self.det_thr, members)
         kept = p2 >= self.det_thr
         return Result(xy, p_yolo, p2, kept, int(kept.sum()), rel, bool(rel["u_var"] >= self.flag_thr))

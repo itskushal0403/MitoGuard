@@ -14,6 +14,46 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score
 
 
+POOLS = {
+    # Stage 1 candidate pool definitions: which detections Stage 2 gets to see
+    "m05": lambda c: c["p_mit"] >= 0.05,  # mitosis score only (default)
+    "m05i10": lambda c: (c["p_mit"] >= 0.05) | (c["p_imp"] >= 0.10),  # + boxes YOLO called "imposter"
+}
+
+
+def in_pool(c: dict, pool: str = "m05") -> np.ndarray:
+    return POOLS[pool](c)
+
+
+def s2_name(run: str, feature: str, pool: str = "m05") -> str:
+    """File stem of a Stage 2 result; the default pool keeps the short name."""
+    return f"{run}__{feature}" if pool == "m05" else f"{run}__{feature}@{pool}"
+
+
+def _logit(p):
+    p = np.clip(np.asarray(p, dtype=np.float64), 1e-4, 1 - 1e-4)
+    return np.log(p / (1 - p))
+
+
+def stack_features(p_filter, p_mit, p_imp) -> np.ndarray:
+    return np.stack([_logit(p_filter), _logit(p_mit), _logit(p_imp)], 1)
+
+
+def fit_stacker(p_filter, p_mit, p_imp, y) -> LogisticRegression:
+    """Learned fusion of the Stage 2 probability with YOLO's two class scores.
+
+    Fitted on validation-case candidates only: there YOLO's scores are out-of-sample, whereas on its own
+    training cases YOLO is over-confident and a stacker would learn to over-trust it.
+    """
+    return LogisticRegression(C=1.0).fit(stack_features(p_filter, p_mit, p_imp), y)
+
+
+def apply_stacker(lr, p_filter, p_mit, p_imp) -> np.ndarray:
+    if len(p_filter) == 0:
+        return np.zeros(0, np.float32)
+    return lr.predict_proba(stack_features(p_filter, p_mit, p_imp))[:, 1].astype(np.float32)
+
+
 class MLP(torch.nn.Module):
     def __init__(self, dim, hidden=256, p=0.3):
         super().__init__()

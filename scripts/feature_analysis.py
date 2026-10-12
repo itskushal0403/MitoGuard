@@ -34,8 +34,9 @@ from mitoguard.data import WORK_ROOT, load_annotations, load_cases  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RES = os.path.join(ROOT, "results")
 SURFACE, INK2, MUTED, AXIS = "#fcfcfb", "#52514e", "#898781", "#c3c2b7"
-NAMES = {"resnet50": "ImageNet ResNet-50", "phikon": "Phikon (ViT-B)", "phikon2": "Phikon-v2 (ViT-L)",
-         "phikon_tta": "Phikon + dihedral TTA", "uni": "UNI (ViT-L)"}
+NAMES = {"resnet50": "ImageNet ResNet-50", "resnet50-z112": "ImageNet ResNet-50, zoom",
+         "phikon": "Phikon CLS", "phikon-z112-ctr": "Phikon cell-centred", "phikon2": "Phikon-v2 CLS",
+         "phikon2-z112-ctr": "Phikon-v2 cell-centred", "uni": "UNI (ViT-L)"}
 
 
 def cell_table(bank):

@@ -19,12 +19,28 @@ FIG = os.path.join(RES, "figures")
 
 # chart tokens (reference palette, light mode)
 SURFACE, INK, INK2, MUTED, GRID, AXIS = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
-# colour follows the system, fixed order: baseline, ImageNet filter, Phikon filter, Phikon-v2 filter
+# Main comparison: every filter uses the same candidate pool (m05i10) and learned stacker, so differences
+# come from the features. Colour follows the system, fixed order.
+PROPOSED = "yolo+phikon2-z112-ctr@m05i10+stack"
 SYSTEMS = [
     ("yolo", "YOLO11 only (baseline)", "#2a78d6"),
-    ("yolo+resnet50", "+ ImageNet ResNet-50 filter", "#eb6834"),
-    ("yolo+phikon", "+ Phikon filter (proposed)", "#1baf7a"),
-    ("yolo+phikon2", "+ Phikon-v2 filter", "#eda100"),
+    ("yolo+resnet50@m05i10+stack", "+ ImageNet ResNet-50 filter", "#eb6834"),
+    ("yolo+phikon-z112-ctr@m05i10+stack", "+ Phikon filter", "#1baf7a"),
+    (PROPOSED, "+ Phikon-v2 filter (proposed)", "#eda100"),
+]
+# Stage 2 design ablation (all on the stain-augmented Stage 1 models)
+ABLATION = [
+    ("yolo", "YOLO11 only"),
+    ("yolo+resnet50", "ImageNet ResNet-50, global pool, filter alone (brief)"),
+    ("yolo+phikon", "Phikon CLS token, filter alone (brief)"),
+    ("yolo+phikon-z112-ctr", "Phikon cell-centred (zoom + centre tokens), filter alone"),
+    ("yolo+phikon-z112-ctr+fused", "  + fixed fusion sqrt(p_yolo * p_filter)"),
+    ("yolo+phikon-z112-ctr+stack", "  + learned stacker"),
+    ("yolo+phikon-z112-ctr@m05i10+stack", "  + learned stacker + wide pool"),
+    ("yolo+resnet50-z112+stack", "ImageNet ResNet-50 zoomed + learned stacker"),
+    ("yolo+resnet50@m05i10+stack", "ImageNet ResNet-50 + learned stacker + wide pool"),
+    ("yolo+phikon2-z112-ctr+stack", "Phikon-v2 cell-centred + learned stacker"),
+    (PROPOSED, "Phikon-v2 cell-centred + learned stacker + wide pool (proposed)"),
 ]
 LABEL = {k: v for k, v, _ in SYSTEMS}
 COLOR = {k: c for k, _, c in SYSTEMS}
@@ -113,6 +129,22 @@ def main():
         fig.savefig(os.path.join(FIG, f"{protocol}_f1.png"), dpi=160)
         plt.close(fig)
 
+        # improvement over the baseline per held-out domain
+        base = f[f.system == "yolo"].set_index("fold").f1
+        d = f[f.system.isin(main_sys[1:])].copy()
+        d["delta"] = d.f1 - d.fold.map(base)
+        fig, ax = plt.subplots(figsize=(10, 3.8))
+        wrapped = {k: v.replace(" ", "\n", 1) for k, v in names.items()}
+        grouped_bars(ax, d, "fold", main_sys[1:], value="delta", names=wrapped)
+        ax.axhline(0, color=AXIS, lw=1)
+        ax.set_ylabel("F1 change vs YOLO11 only")
+        ax.set_title(f"{title}: gain from the Stage 2 filter on each unseen domain")
+        ax.tick_params(axis="x", labelsize=8)
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=3, fontsize=9)
+        fig.tight_layout()
+        fig.savefig(os.path.join(FIG, f"{protocol}_delta_f1.png"), dpi=160)
+        plt.close(fig)
+
         fig, ax = plt.subplots(figsize=(10, 4.2))
         grouped_bars(ax, f[f.system.isin(main_sys)], "fold", main_sys, value="imposter_fp_rate")
         ax.set_ylabel("Imposters counted as mitoses")
@@ -123,12 +155,30 @@ def main():
         fig.savefig(os.path.join(FIG, f"{protocol}_imposter_fp.png"), dpi=160)
         plt.close(fig)
 
+    # Stage 2 design ablation (LOTO + LOSO)
+    rows = []
+    for key, desc in ABLATION:
+        r = {"Stage 2 design": desc}
+        for protocol in ("loto", "loso"):
+            fs = folds[(folds.protocol == protocol) & (folds.system == key)]
+            if fs.empty:
+                continue
+            pl = pooled(cases[(cases.protocol == protocol) & (cases.system == key)], ["system"]).iloc[0]
+            r[f"{protocol.upper()} mean F1"] = fs.f1.mean()
+            r[f"{protocol.upper()} val F1"] = fs.val_f1.mean()
+            r[f"{protocol.upper()} imposter FP"] = pl.imposter_fp_rate
+        rows.append(r)
+    out += ["## Stage 2 design ablation", "",
+            "Mean held-out F1 over folds. `val F1` is the training-domain validation score used for every",
+            "design decision; held-out numbers were not used for selection.", "",
+            pd.DataFrame(rows).round(3).to_markdown(index=False), ""]
+
     # stain augmentation ablation
     ab = folds[folds.system.str.endswith("_nostain")]
     if not ab.empty:
         rows = []
         for (p, fo), g in folds.groupby(["protocol", "fold"]):
-            for base in ("yolo", "yolo+phikon"):
+            for base in ("yolo", "yolo+phikon-z112-ctr@m05i10+stack", PROPOSED):
                 a, b = g[g.system == base], g[g.system == base + "_nostain"]
                 if len(a) and len(b):
                     rows.append({"protocol": p, "fold": fo, "system": base, "F1 with stain aug": a.f1.iloc[0],
@@ -159,8 +209,9 @@ def main():
             ax.set_title(setting)
             ax.set_ylim(0, 1)
         axes[0].set_ylabel("F1 on official test regions")
-        axes[0].legend(loc="upper center", bbox_to_anchor=(1.05, -0.08), ncol=len(main_sys), fontsize=9)
-        fig.tight_layout()
+        h, lab = axes[0].get_legend_handles_labels()
+        fig.legend(h, lab, loc="lower center", ncol=len(main_sys), fontsize=9, frameon=False)
+        fig.tight_layout(rect=(0, 0.07, 1, 1))
         fig.savefig(os.path.join(FIG, "domain_gap.png"), dpi=160)
         plt.close(fig)
 
@@ -173,7 +224,7 @@ def main():
         for s in systems:
             cs = c[c.system == s]
             r = {"system": LABEL.get(s, s), "regions": len(cs), "share with >20% error": cs.large_err.mean()}
-            for u in ("u_var", "u_relstd", "u_ens", "u_gap"):
+            for u in ("u_var", "u_relstd", "u_gap"):
                 r[f"AUROC {u}"] = safe_auroc(cs.large_err, cs[u].fillna(0))
             r["AUROC u_var (err>20% & >=3)"] = safe_auroc(cs.large_err3, cs.u_var.fillna(0))
             rows.append(r)
@@ -197,7 +248,7 @@ def main():
         ax.grid(axis="both")
         ax.legend(loc="lower right", fontsize=8)
         ax = axes[1]
-        prop = "yolo+phikon" if "yolo+phikon" in systems else systems[-1]
+        prop = PROPOSED if PROPOSED in systems else systems[-1]
         cs = c[c.system == prop]
         rel = (cs["count"] - cs.n_gt).abs() / cs.n_gt.clip(lower=1)
         ax.scatter(cs.u_var, rel, s=18, color=COLOR[prop], edgecolor=SURFACE, linewidth=0.8, alpha=0.85)

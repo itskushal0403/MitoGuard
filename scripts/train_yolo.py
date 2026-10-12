@@ -59,6 +59,7 @@ def main():
     ap.add_argument("--no-stain-aug", action="store_true")
     ap.add_argument("--fraction", type=float, default=1.0, help="subset of training tiles (smoke tests)")
     ap.add_argument("--name", default=None)
+    ap.add_argument("--resume", action="store_true", help="continue an interrupted run from weights/last.pt")
     args = ap.parse_args()
 
     fold = get_fold(args.fold)
@@ -84,6 +85,16 @@ def main():
     weights_dir = os.path.join(WORK_ROOT, "weights")  # pretrained checkpoints are downloaded here, not into the repo
     os.makedirs(weights_dir, exist_ok=True)
     os.chdir(weights_dir)
+    last = os.path.join(run_dir, name, "weights", "last.pt")
+    if args.resume and os.path.exists(last):
+        import torch
+
+        if torch.load(last, map_location="cpu", weights_only=False).get("epoch", -1) == -1:
+            print("run already finished (optimizer stripped); nothing to resume")
+            return
+        # restores weights, optimizer, LR schedule and epoch counter; all other args come from the checkpoint
+        YOLO(last).train(resume=True)
+        return
     model = YOLO(args.model)
     model.train(
         data=data_yaml, epochs=args.epochs, imgsz=args.imgsz, batch=args.batch, workers=args.workers,
