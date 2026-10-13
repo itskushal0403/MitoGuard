@@ -2,7 +2,7 @@
 
 **Imposter-aware, scanner-robust mitotic figure counting with calibrated uncertainty.**
 
-[![Live demo](https://img.shields.io/badge/🤗%20Live%20demo-Hugging%20Face%20Space-blue)](HF_SPACE_URL)
+[![Live demo](https://img.shields.io/badge/🤗%20Live%20demo-Hugging%20Face%20Space-blue)](https://huggingface.co/spaces/itskushal0403/MitoGuard)
 [![Report](https://img.shields.io/badge/📄%20Project%20report-docs%2FPROJECT__REPORT.md-teal)](docs/PROJECT_REPORT.md)
 [![Model card](https://img.shields.io/badge/Model%20card-docs%2Fmodel__card.md-lightgrey)](docs/model_card.md)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
@@ -15,7 +15,7 @@ candidates. A LoRA-fine-tuned **pathology foundation model** (Phikon-v2 / Phikon
 look-alike *imposter* cells that cause most false alarms. Every count comes with a **conformal 90% interval**
 and a **grade-ambiguity flag** that tells the pathologist when to look.
 
-**👉 [Try it live](HF_SPACE_URL)** · **[Read the full project report](docs/PROJECT_REPORT.md)**
+**👉 [Try it live](https://huggingface.co/spaces/itskushal0403/MitoGuard)** · **[Read the full project report](docs/PROJECT_REPORT.md)**
 
 ![Pipeline](docs/figures/pipeline.png)
 

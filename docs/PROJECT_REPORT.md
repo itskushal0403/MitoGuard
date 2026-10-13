@@ -2,7 +2,7 @@
 
 **Imposter-aware, scanner-robust mitotic figure counting with calibrated uncertainty**
 
-Live demo: *Hugging Face Space (link in README)* · Code: https://github.com/itskushal0403/MitoGuard
+Live demo: https://huggingface.co/spaces/itskushal0403/MitoGuard · Code: https://github.com/itskushal0403/MitoGuard
 
 ![Pipeline](figures/pipeline.png)
 
