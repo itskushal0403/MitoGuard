@@ -2,7 +2,7 @@
 
 **Imposter-aware, scanner-robust mitotic figure counting with calibrated uncertainty.**
 
-[![Live demo](https://img.shields.io/badge/🤗%20Live%20demo-Hugging%20Face%20Space-blue)](https://huggingface.co/spaces/itskushal0403/MitoGuard)
+[![Project website](https://img.shields.io/badge/🤗%20Project%20website-Hugging%20Face%20Space-blue)](https://huggingface.co/spaces/itskushal0403/MitoGuard)
 [![Report](https://img.shields.io/badge/📄%20Project%20report-docs%2FPROJECT__REPORT.md-teal)](docs/PROJECT_REPORT.md)
 [![Model card](https://img.shields.io/badge/Model%20card-docs%2Fmodel__card.md-lightgrey)](docs/model_card.md)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
@@ -15,7 +15,7 @@ candidates. A LoRA-fine-tuned **pathology foundation model** (Phikon-v2 / Phikon
 look-alike *imposter* cells that cause most false alarms. Every count comes with a **conformal 90% interval**
 and a **grade-ambiguity flag** that tells the pathologist when to look.
 
-**👉 [Try it live](https://huggingface.co/spaces/itskushal0403/MitoGuard)** · **[Read the full project report](docs/PROJECT_REPORT.md)**
+**👉 [Project website with interactive results](https://huggingface.co/spaces/itskushal0403/MitoGuard)** · **[Read the full project report](docs/PROJECT_REPORT.md)**
 
 ![Pipeline](docs/figures/pipeline.png)
 
@@ -384,7 +384,9 @@ mitoguard/          library: data & folds, tiling, stain augmentation, YOLO cand
 scripts/            workflow: download → tiles → train → detect → embed / fine-tune → evaluate → report,
                     plus clinical metrics, bootstrap CIs, calibration, nested selection, TUPAC16 validation
 app/app.py          full Gradio app (GPU; v1 or v2 bundle) with Results and Data audit tabs
-app/space/          the hosted Hugging Face Space (CPU-friendly v2 configuration, polished UI)
+app/space/          live Gradio app for a Hugging Face Space (CPU-friendly v2 configuration); needs a
+                    Gradio-capable Space (HF PRO) or any server: `bash scripts/build_space.sh DIR && python DIR/app.py`
+site/               the static project website hosted at huggingface.co/spaces/itskushal0403/MitoGuard
 slurm/              SLURM scripts: resumable training queue, fine-tuning fan-out, final evaluation passes
 results/            v1 results (root), v2 results (results/v2), external validation (results/external)
 docs/               project report, model card, two-page write-up, experiment log, data audit, figures
