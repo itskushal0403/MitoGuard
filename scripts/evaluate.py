@@ -71,10 +71,22 @@ def em_variants(dets, fold, members):
 
 
 def eval_fold(job):
+    """All systems of one fold (sequential)."""
     protocol, fold, backbones, pools, adapt = job
+    fold_rows, case_rows = [], []
+    for spec in systems_for(fold.tag, backbones, pools):
+        fr, cr = eval_task((protocol, fold, spec, adapt))
+        fold_rows += fr
+        case_rows += cr
+    return fold_rows, case_rows
+
+
+def eval_task(job):
+    """One (fold, system) pair -> fold rows and case rows (parallelised over pairs in main)."""
+    protocol, fold, spec, adapt = job
     cases = load_cases()
     fold_rows, case_rows = [], []
-    for base_system, run, bb, mode, pool_name in systems_for(fold.tag, backbones, pools):
+    for base_system, run, bb, mode, pool_name in [spec]:
         cands = pickle.load(open(os.path.join(WORK_ROOT, "cands", run + ".pkl"), "rb"))
         s2 = pickle.load(open(os.path.join(WORK_ROOT, "stage2", s2_name(run, bb, pool_name) + ".pkl"), "rb"))["scores"] if bb else None
         # detection score and (for reliability) per-member scores, aligned with the candidate pool
@@ -94,7 +106,7 @@ def eval_fold(job):
             yv = np.concatenate([label_candidates(c, dets[c]["xy"]) == 1 for c in fold.val]).astype(int)
             lr = fit_stacker(cat("score"), cat("p_mit"), cat("p_imp"), yv)
             os.makedirs(os.path.join(WORK_ROOT, "stackers"), exist_ok=True)
-            pickle.dump(lr, open(os.path.join(WORK_ROOT, "stackers", f"{fold.tag}__{system}.pkl"), "wb"))
+            pickle.dump(lr, open(os.path.join(WORK_ROOT, "stackers", f"{fold.tag}__{base_system}.pkl"), "wb"))
             for d in dets.values():
                 d["score"] = apply_stacker(lr, d["score"], d["p_mit"], d["p_imp"])
         variants = [(base_system, dets, members)]
@@ -161,10 +173,12 @@ def main():
     ap.add_argument("--out", default=RESULTS, help="output directory for folds.csv / cases.csv.gz")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
-    jobs = [(p, f, args.backbones, args.pools, args.adapt) for p in args.protocols for f in make_folds(p)]
+    jobs = [(p, f, spec, args.adapt) for p in args.protocols for f in make_folds(p)
+            for spec in systems_for(f.tag, args.backbones, args.pools)]
+    print(f"{len(jobs)} (fold, system) evaluations on {args.workers} workers", flush=True)
     fold_rows, case_rows = [], []
     with Pool(min(args.workers, len(jobs))) as pool:
-        for fr, cr in pool.imap(eval_fold, jobs):
+        for fr, cr in pool.imap_unordered(eval_task, jobs, chunksize=1):
             fold_rows += fr
             case_rows += cr
     pd.DataFrame(fold_rows).to_csv(os.path.join(args.out, "folds.csv"), index=False)

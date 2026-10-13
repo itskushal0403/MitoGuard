@@ -89,6 +89,10 @@ def main():
     ap.add_argument("--self-train-only", action="store_true",
                     help="skip training: reload the saved model + scores and run only the self-training round")
     ap.add_argument("--st-rounds", type=int, default=1, help="self-training rounds (output suffix +st, +st2, ...)")
+    ap.add_argument("--st-budget", choices=["fixed", "prevalence"], default="fixed",
+                    help="pseudo-positive budget: fixed top 10%% (pre-specified) or prevalence-aware: 70%% of the "
+                         "site's expected mitosis count from validation-calibrated probabilities, capped at 10%% "
+                         "(post-hoc fix after the fixed budget failed on a low-prevalence site); suffix +stpa")
     ap.add_argument("--self-train", action="store_true",
                     help="also run one round of class-balanced self-training on the held-out site's unlabelled "
                          "candidates (unsupervised site adaptation); saved separately with suffix '+st'")
@@ -179,21 +183,33 @@ def self_train(args, model, name, out_dir, tr_rows, tr_y, va_rows, va_y, xva, te
     labelled source crops (anchors the decision boundary), at 1/4 of the source learning rate.
     """
     rng = np.random.default_rng(0)
+    cal = None
+    if args.st_budget == "prevalence":
+        from sklearn.linear_model import LogisticRegression
+        pv = predict(model, batches(xva, 128), args.zoom, tta=args.tta)
+        lg = lambda p: np.log(np.clip(p, 1e-5, 1 - 1e-5) / (1 - np.clip(p, 1e-5, 1 - 1e-5)))  # noqa: E731
+        platt = LogisticRegression(C=1e3).fit(lg(pv)[:, None], va_y)
+        cal = lambda p: platt.predict_proba(lg(p)[:, None])[:, 1]  # noqa: E731
     for rnd in range(args.st_rounds):
-        p_test = _self_train_round(args, model, rng, tr_rows, tr_y, xte, p_test, dev)
+        p_test = _self_train_round(args, model, rng, tr_rows, tr_y, xte, p_test, dev, cal)
         if p_test is None:
             return
     p_val = predict(model, batches(xva, 128), args.zoom, tta=args.tta)
     print(f"after {args.st_rounds} self-training round(s): val AP {average_precision_score(va_y, p_val):.4f} [{time.time() - t0:.0f}s]", flush=True)
-    sfx = "+st" if args.st_rounds == 1 else f"+st{args.st_rounds}"
+    sfx = ("+st" if args.st_rounds == 1 else f"+st{args.st_rounds}") + ("pa" if args.st_budget == "prevalence" else "")
     np.savez(os.path.join(out_dir, name + sfx + ".npz"), rows=np.concatenate([va_rows, te_rows]),
              prob=np.concatenate([p_val, p_test]).astype(np.float32))
 
 
-def _self_train_round(args, model, rng, tr_rows, tr_y, xte, p_test, dev):
+def _self_train_round(args, model, rng, tr_rows, tr_y, xte, p_test, dev, cal=None):
     """One round: select pseudo-labels from current target scores, 1 epoch of LoRA updates, re-score target."""
     order = np.argsort(-p_test)
-    pos = order[: int(0.10 * len(order))]
+    k = int(0.10 * len(order))
+    if cal is not None:  # prevalence-aware: never claim more mitoses than the site is expected to contain
+        expected = float(cal(p_test).sum())
+        k = int(min(k, 0.7 * expected))
+        print(f"prevalence-aware budget: expected mitoses {expected:.0f} of {len(order)} candidates -> {k} pseudo-positives", flush=True)
+    pos = order[:k]
     bottom = order[len(order) // 2:]
     neg = rng.choice(bottom, min(len(bottom), 3 * max(len(pos), 1)), replace=False)
     src = rng.choice(len(tr_rows), min(len(tr_rows), len(pos) + len(neg)), replace=False)

@@ -23,7 +23,7 @@ from scipy.stats import spearmanr
 from sklearn.metrics import cohen_kappa_score
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RES = os.path.join(ROOT, "results")
+RES = os.environ.get("MITOGUARD_RESULTS", os.path.join(ROOT, "results"))
 CUTS = (7.5, 14.5)  # category boundaries: <=7 | 8-14 | >=15
 
 
@@ -94,6 +94,9 @@ def main():
     ap.add_argument("--alpha", type=float, default=0.1)
     args = ap.parse_args()
     cases = pd.read_csv(os.path.join(RES, "cases.csv.gz"))
+    sel = os.path.join(RES, "v2_selected_cases.csv.gz")
+    if os.path.exists(sel):
+        cases = pd.concat([cases, pd.read_csv(sel)])
     out = ["# Clinical evaluation of region-level mitotic counts", "",
            "Held-out regions only. Conformal intervals are calibrated on each fold's validation regions",
            "(training domains); categories use the cut-offs <=7 / 8-14 / >=15 per ~2 mm^2 region.", ""]

@@ -58,9 +58,15 @@ class MitoGuardV2:
         dev = device if torch.cuda.is_available() else "cpu"
         self.dev = dev
         self.detectors = [CandidateDetector(os.path.join(here, w), device=dev) for w in b["yolo_weights"]]
-        self.clf = CellClassifier(b["backbone"], lora_r=b.get("lora_r", 16), zoom=b.get("zoom", 112))
-        self.clf.load_state_dict(b["classifier_state"], strict=False)
-        self.clf = self.clf.to(dev).eval()
+        # one or more fine-tuned classifiers; an ensemble averages their logits (geometric mean of odds)
+        names = b.get("backbones") or [b["backbone"]]
+        states = b.get("classifier_states") or [b["classifier_state"]]
+        self.clfs = []
+        for name, state in zip(names, states):
+            clf = CellClassifier(name, lora_r=b.get("lora_r", 16), zoom=b.get("zoom", 112))
+            clf.load_state_dict(state, strict=False)
+            self.clfs.append(clf.to(dev).eval())
+        self.zoom = b.get("zoom", 112)
         self.platt, self.stacker = b["platt"], b.get("stacker")
         self.pool, self.det_thr, self.flag_thr, self.conf_q = b["pool"], b["det_thr"], b["flag_thr"], b["conformal_q"]
         self.tta = b.get("tta", 8)
@@ -73,10 +79,13 @@ class MitoGuardV2:
         p = np.zeros(len(xy), np.float32)
         if len(xy):
             crops = torch.from_numpy(np.stack([crop_centered(img, x, y, 224) for x, y in xy]))
-            raw = predict(self.clf, (crops[k:k + batch] for k in range(0, len(crops), batch)), self.clf.zoom,
-                          tta=self.tta, device=self.dev)
-            raw = np.clip(raw, 1e-5, 1 - 1e-5)
-            p = self.platt.predict_proba(np.log(raw / (1 - raw))[:, None])[:, 1].astype(np.float32)
+            logits = []
+            for clf in self.clfs:
+                raw = predict(clf, (crops[k:k + batch] for k in range(0, len(crops), batch)), self.zoom,
+                              tta=self.tta, device=self.dev)
+                raw = np.clip(raw, 1e-5, 1 - 1e-5)
+                logits.append(np.log(raw / (1 - raw)))
+            p = self.platt.predict_proba(np.mean(logits, 0)[:, None])[:, 1].astype(np.float32)
             if self.stacker is not None:
                 p = apply_stacker(self.stacker, p, pm, pi)
         kept = p >= self.det_thr

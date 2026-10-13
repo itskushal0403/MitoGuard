@@ -27,8 +27,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fold", default="indomain_all")
-    ap.add_argument("--backbone", default="phikon2")
-    ap.add_argument("--pool", default="a05")
+    ap.add_argument("--backbone", default="ens", help="fine-tuned backbone, or 'ens' for the 3-model ensemble")
+    ap.add_argument("--members", nargs="+", default=["phikon2", "phikon", "lunit"])
+    ap.add_argument("--pool", default="m05i10")
     ap.add_argument("--variant", default="union")
     ap.add_argument("--stack", action="store_true")
     ap.add_argument("--alpha", type=float, default=0.1)
@@ -38,9 +39,9 @@ def main():
     feat = f"ft-{args.backbone}"
     sfx = "" if args.variant == "stain" else f"_{args.variant}"
     system = f"yolo+{feat}@{args.pool}" + ("+stack" if args.stack else "") + sfx
-    folds = pd.read_csv(os.path.join(ROOT, "results", "folds.csv"))
+    folds = pd.read_csv(os.path.join(ROOT, "results", "v2", "folds.csv"))
     row = folds[(folds.protocol == protocol) & (folds.fold == name) & (folds.system == system)].iloc[0]
-    cases = pd.read_csv(os.path.join(ROOT, "results", "cases.csv.gz"))
+    cases = pd.read_csv(os.path.join(ROOT, "results", "v2", "cases.csv.gz"))
     val = cases[(cases.protocol == protocol) & (cases.fold == name) & (cases.system == system) & (cases.split == "val")]
     fpr, tpr, thr = roc_curve(large_error_label(val["count"], val["n_gt"], 0.2), val["u_var"])
     flag_thr = float(thr[np.argmax(tpr - fpr)])
@@ -58,8 +59,9 @@ def main():
     stacker = None
     if args.stack:
         stacker = pickle.load(open(os.path.join(WORK_ROOT, "stackers", f"{args.fold}__{system}.pkl"), "rb"))
-    state = torch.load(os.path.join(WORK_ROOT, "ft", f"{args.fold}__{args.backbone}.pt"), map_location="cpu")
-    bundle = {"version": 2, "yolo_weights": yolos, "backbone": args.backbone, "classifier_state": state,
+    members = args.members if args.backbone == "ens" else [args.backbone]
+    states = [torch.load(os.path.join(WORK_ROOT, "ft", f"{args.fold}__{m}.pt"), map_location="cpu") for m in members]
+    bundle = {"version": 2, "yolo_weights": yolos, "backbones": members, "classifier_states": states,
               "lora_r": 16, "zoom": 112, "tta": 8, "platt": s2["platt"], "stacker": stacker, "pool": args.pool,
               "det_thr": float(row.threshold), "flag_thr": flag_thr, "conformal_q": conf_q,
               "provenance": {"fold": args.fold, "system": system, "test_f1": float(row.f1), "val_f1": float(row.val_f1)}}

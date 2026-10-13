@@ -33,7 +33,10 @@ from mitoguard.tiling import crop_centered  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXAMPLES = os.path.join(ROOT, "app", "examples")
 RESULTS = os.path.join(ROOT, "results")
-FIGURES = [  # (file, caption) shown in the Results tab
+FIGURES = [  # (file under results/figures or results/<sub>/figures, caption) shown in the Results tab
+    ("v2/v2_f1.png", "MitoGuard v2: held-out F1 on every unseen tumour type and scanner"),
+    ("v2/calibration.png", "v2: calibration of mitosis probabilities on unseen tumour types"),
+    ("v2/v2_counts.png", "v2: predicted vs true counts on unseen tumour types"),
     ("loto_delta_f1.png", "Leave-one-tumour-out: F1 gain over YOLO alone on each unseen tumour type"),
     ("loto_f1.png", "Leave-one-tumour-out: held-out F1 per tumour type"),
     ("loso_delta_f1.png", "Leave-one-scanner-out: F1 gain over YOLO alone on each unseen scanner"),
@@ -51,9 +54,12 @@ def read_text(path, missing="_not generated yet_"):
 
 
 def load_results():
-    figs = [(os.path.join(RESULTS, "figures", f), c) for f, c in FIGURES
-            if os.path.exists(os.path.join(RESULTS, "figures", f))]
-    return figs, read_text(os.path.join(RESULTS, "summary.md")), read_text(os.path.join(ROOT, "docs", "data_audit.md"))
+    def path(f):
+        sub, name = (f.split("/", 1) if "/" in f else ("", f))
+        return os.path.join(RESULTS, sub, "figures", name)
+    figs = [(path(f), c) for f, c in FIGURES if os.path.exists(path(f))]
+    summary = read_text(os.path.join(RESULTS, "v2", "summary_v2.md")) + "\n\n---\n\n# v1 results\n\n" + read_text(os.path.join(RESULTS, "summary.md"))
+    return figs, summary, read_text(os.path.join(ROOT, "docs", "data_audit.md"))
 
 
 def load_image(path):

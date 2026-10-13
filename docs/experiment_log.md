@@ -77,3 +77,22 @@ Chronological notes on decisions and negative results (things tried and not adop
 - **Backbone throughput (LoRA r=16, bf16, A30, batch 64).** Phikon ViT-B 510 img/s, Lunit ViT-S/8 305 img/s,
   Phikon-v2 ViT-L 174 img/s; Kaiko Midnight ViT-g did not finish the benchmark in 14 min (too heavy for the
   24 h budget across 12 folds).
+- **Fine-tuned classifiers (LoRA r=16, 4 epochs, union candidates).** Validation AP on the widest pool:
+  Phikon-v2 0.89-0.91 (8-view TTA). Per-fold training ~35-50 min on an A30 (Phikon-v2), ~15 min (Phikon).
+- **Model-selection pitfall and fix.** In-domain validation (training-domain cases) always prefers fusing
+  with YOLO's scores, because YOLO is excellent in-domain. Under scanner shift YOLO's scores degrade and the
+  fused systems lose (3D Histech: fused 0.56 vs filter-only 0.63). Adopted nested leave-one-domain-out
+  selection (DomainBed, Gulrajani & Lopez-Paz 2021) *after seeing 2 of 12 folds* (loto_CL, loso_3DH); both
+  rules are reported. The deployed configuration, chosen on all 11 cross-domain folds, is the 3-model
+  ensemble used as a filter on the union pool (m05i10), without YOLO fusion: 0.767 LOTO / 0.754 LOSO mean F1.
+- **Final v2 (nested selection).** LOTO pooled F1 0.778 [0.758, 0.795] vs YOLO 0.760 (+1.8 [1.3, 2.3]);
+  LOSO pooled 0.731 [0.705, 0.753] vs 0.510 (+22.1 [18.7, 25.7]). Clinical: LOSO CCC 0.45 -> 0.87, kappa
+  0.55 -> 0.83. Candidate ECE on unseen tumours 0.017 (YOLO raw 0.060).
+- **Self-training failure mode (pre-specified fixed budget).** Top-10% pseudo-positives poisoned the
+  Hamamatsu XR site (0.58 vs 0.75 without adaptation): the site mixes neuroendocrine regions where
+  imposters outnumber mitoses ~3:1, so the true mitosis share is well below 10% and self-training reinforced
+  imposters (confirmation bias). Fix, designed *after* observing this and therefore reported as post-hoc:
+  prevalence-aware budget = 70% of the site's expected mitosis count from validation-calibrated
+  probabilities (capped at 10%). On HNET it estimates 770 mitoses among 12,821 candidates (true: 639).
+- **Two-round self-training** (fixed budget) was started but cancelled once the fixed-budget failure mode
+  was understood; it is not reported.

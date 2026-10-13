@@ -18,14 +18,24 @@ import pandas as pd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RES = os.environ.get("MITOGUARD_RESULTS", os.path.join(ROOT, "results"))
-PATTERN = re.compile(r"^yolo\+ft-(?P<bb>[a-z0-9]+)(?P<st>\+st)?@(?P<pool>a05|m05i10)(?P<mode>\+fused|\+stack)?(?P<sfx>_union)?$")
+PATTERN = re.compile(r"^yolo\+ft-(?P<bb>[a-z0-9]+)(?P<st>\+st[a-z0-9]*)?@(?P<pool>a05|m05i10)(?P<mode>\+fused|\+stack)?(?P<sfx>_union)?$")
+FAMILIES = [("no adaptation", "MitoGuard-v2"),
+            ("site-adapted, fixed budget (pre-specified)", "MitoGuard-v2-SA"),
+            ("site-adapted, prevalence-aware budget (post-hoc)", "MitoGuard-v2-SApa")]
 
 
 def family(system):
     m = PATTERN.match(system)
     if not m:
         return None
-    return "site-adapted" if m.group("st") else "no adaptation"
+    st = m.group("st")
+    if not st:
+        return "no adaptation"
+    if st == "+st":
+        return "site-adapted, fixed budget (pre-specified)"
+    if st == "+stpa":
+        return "site-adapted, prevalence-aware budget (post-hoc)"
+    return None  # other variants (e.g. multi-round) are not part of any reported family
 
 
 def nested(folds, protocol, systems):
@@ -46,7 +56,7 @@ def main():
     summary = []
     for protocol in ("loto", "loso"):
         base = folds[(folds.protocol == protocol) & (folds.system == "yolo")].set_index("fold").f1
-        for fam in ("no adaptation", "site-adapted"):
+        for fam, _ in FAMILIES:
             systems = [s for s in folds.system.unique() if family(s) == fam]
             if not systems:
                 continue
@@ -71,7 +81,7 @@ def main():
     cases = pd.read_csv(os.path.join(RES, "cases.csv.gz"))
     picked = []
     for protocol in ("loto", "loso"):
-        for fam, label in (("no adaptation", "MitoGuard-v2"), ("site-adapted", "MitoGuard-v2-SA")):
+        for fam, label in FAMILIES:
             systems = [s for s in folds.system.unique() if family(s) == fam]
             sel = nested(folds, protocol, systems) if systems else pd.DataFrame()
             for r in sel.itertuples():
