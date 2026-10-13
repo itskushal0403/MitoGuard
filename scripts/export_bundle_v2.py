@@ -34,6 +34,8 @@ def main():
     ap.add_argument("--stack", action="store_true")
     ap.add_argument("--alpha", type=float, default=0.1)
     ap.add_argument("--out", default=os.path.join(ROOT, "checkpoints"))
+    ap.add_argument("--name", default="mitoguard_v2_bundle.pt")
+    ap.add_argument("--tta", type=int, default=8)
     args = ap.parse_args()
     protocol, name = args.fold.split("_", 1)
     feat = f"ft-{args.backbone}"
@@ -62,10 +64,10 @@ def main():
     members = args.members if args.backbone == "ens" else [args.backbone]
     states = [torch.load(os.path.join(WORK_ROOT, "ft", f"{args.fold}__{m}.pt"), map_location="cpu") for m in members]
     bundle = {"version": 2, "yolo_weights": yolos, "backbones": members, "classifier_states": states,
-              "lora_r": 16, "zoom": 112, "tta": 8, "platt": s2["platt"], "stacker": stacker, "pool": args.pool,
+              "lora_r": 16, "zoom": 112, "tta": args.tta, "platt": s2["platt"], "stacker": stacker, "pool": args.pool,
               "det_thr": float(row.threshold), "flag_thr": flag_thr, "conformal_q": conf_q,
               "provenance": {"fold": args.fold, "system": system, "test_f1": float(row.f1), "val_f1": float(row.val_f1)}}
-    torch.save(bundle, os.path.join(args.out, "mitoguard_v2_bundle.pt"))
+    torch.save(bundle, os.path.join(args.out, args.name))
     print(f"saved v2 bundle: {system} det_thr={row.threshold:.2f} flag_thr={flag_thr:.3f} conformal_q={conf_q:.2f} "
           f"in-domain test F1={row.f1:.3f}")
 

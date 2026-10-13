@@ -2,9 +2,49 @@
 
 **Imposter-aware, scanner-robust mitotic figure counting with calibrated uncertainty.**
 
-MitoGuard counts mitotic figures in H&E tumour regions from scanners and tumour types it has never
-seen. It rejects the look-alike "imposter" cells that cause most false alarms, and it reports every count
-with a calibrated 90% interval and a grade-ambiguity flag that tells the pathologist when to look.
+[![Live demo](https://img.shields.io/badge/🤗%20Live%20demo-Hugging%20Face%20Space-blue)](HF_SPACE_URL)
+[![Report](https://img.shields.io/badge/📄%20Project%20report-docs%2FPROJECT__REPORT.md-teal)](docs/PROJECT_REPORT.md)
+[![Model card](https://img.shields.io/badge/Model%20card-docs%2Fmodel__card.md-lightgrey)](docs/model_card.md)
+![Python](https://img.shields.io/badge/python-3.11-blue)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.5-ee4c2c)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+MitoGuard counts **mitotic figures**, the dividing cells pathologists count to grade tumours, in H&E
+histopathology regions from **scanners and tumour types it has never seen**. Two YOLO11 detectors propose
+candidates. A LoRA-fine-tuned **pathology foundation model** (Phikon-v2 / Phikon / Lunit-DINO) rejects the
+look-alike *imposter* cells that cause most false alarms. Every count comes with a **conformal 90% interval**
+and a **grade-ambiguity flag** that tells the pathologist when to look.
+
+**👉 [Try it live](HF_SPACE_URL)** · **[Read the full project report](docs/PROJECT_REPORT.md)**
+
+![Pipeline](docs/figures/pipeline.png)
+
+![Example outputs on held-out test regions](docs/figures/examples.png)
+<sub>MitoGuard v2 on held-out MIDOG++ test regions. Green: counted mitotic figure; red: rejected imposter. The
+interval and grade-ambiguity flag are shown above each region.</sub>
+
+### Highlights
+
+* **+20.5 F1 on unseen scanners** (0.510 → 0.714) and +1.8 on unseen tumour types, with nested
+  leave-one-domain-out selection and paired bootstrap CIs.
+* **Clinically meaningful counts.** Agreement with pathologist counts on unseen scanners rises from CCC 0.45 to
+  0.85, and unflagged regions get the grade category right 99.6% of the time.
+* **Novel cell-centred read-out** for ViT foundation models (zoom + centre patch tokens): validation AP 0.77 → 0.90.
+* **External validation on TUPAC16** without any tuning: 0.754 (v1) / 0.741 (v2) vs 0.735 best published.
+* **Honest science.** Negative results are documented (label-shift EM, stacking under shift, a failed
+  self-training variant), and post-hoc fixes are labelled as such.
+
+### Documentation map
+
+| Document | What it contains |
+|---|---|
+| [docs/PROJECT_REPORT.md](docs/PROJECT_REPORT.md) | Complete project write-up with figures: motivation, data, method, results, analysis |
+| [docs/model_card.md](docs/model_card.md) | Intended use, subgroup performance, failure modes |
+| [docs/writeup.md](docs/writeup.md) | Two-page summary |
+| [docs/experiment_log.md](docs/experiment_log.md) | Every design decision and negative result, in order |
+| [docs/data_audit.md](docs/data_audit.md) | Scanner × tumour confounding audit of MIDOG++ |
+| [results/v2/summary_v2.md](results/v2/summary_v2.md) | All v2 result tables (selection, bootstrap, clinical) |
+| [results/external/tupac16.md](results/external/tupac16.md) | External validation on TUPAC16 |
 
 ## Headline results (MitoGuard v2, held-out domains only, MIDOG++)
 
@@ -338,14 +378,17 @@ Intended use, subgroup performance and failure modes: [`docs/model_card.md`](doc
 ## Repository layout
 
 ```
-mitoguard/        library: data & folds, tiling, stain augmentation, detector, features, Stage 2,
-                  reliability scores, metrics, end-to-end pipeline
-scripts/          numbered workflow: download → tiles → train → detect → embed → stage 2 → evaluate → report
-app/app.py        Gradio demo (+ example regions from the MIDOG++ test split, CC0)
-slurm/            SLURM job scripts used on the cluster
-results/          tables (summary.md, folds.csv, cases.csv) and figures
-docs/             data audit, experiment log, 2-page write-up
-tests/            unit tests for the dataset-independent pieces
+mitoguard/          library: data & folds, tiling, stain augmentation, YOLO candidate detector, frozen features,
+                    LoRA fine-tuning (ft.py), Stage 2 filters & stacking, reliability, label-shift EM,
+                    metrics, end-to-end pipelines (pipeline.py = v1, pipeline_v2.py = v2)
+scripts/            workflow: download → tiles → train → detect → embed / fine-tune → evaluate → report,
+                    plus clinical metrics, bootstrap CIs, calibration, nested selection, TUPAC16 validation
+app/app.py          full Gradio app (GPU; v1 or v2 bundle) with Results and Data audit tabs
+app/space/          the hosted Hugging Face Space (CPU-friendly v2 configuration, polished UI)
+slurm/              SLURM scripts: resumable training queue, fine-tuning fan-out, final evaluation passes
+results/            v1 results (root), v2 results (results/v2), external validation (results/external)
+docs/               project report, model card, two-page write-up, experiment log, data audit, figures
+tests/              unit tests for dataset-independent pieces
 ```
 
 ## Reproduce
