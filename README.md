@@ -109,6 +109,34 @@ for the v1 frozen filter and 0.060 for YOLO's raw scores.
 * Inter-pathologist agreement on mitotic figures is itself limited, and in-domain F1 here is already ~0.80.
   The largest remaining gains are on unseen scanners, which is exactly where v2 moves the needle.
 
+### External validation on TUPAC16 (never seen in training or tuning)
+
+TUPAC16 auxiliary mitosis set: 73 human breast-cancer cases from other labs and scanners, 656 images.
+Models are trained on the official MIDOG++ training split, with thresholds fixed on MIDOG++ validation, so
+nothing is tuned on TUPAC16. Official matching radius, pooled F1, case-level bootstrap CIs.
+[Full table](results/external/tupac16.md).
+
+| F1 [95% CI] | YOLO11 | MitoGuard v1 | MitoGuard v2 | Best published¹ |
+|---|---|---|---|---|
+| Relabeled TUPAC16, augmented labels (1,999 mitoses) | 0.733 | **0.754** [0.726, 0.778] | 0.741 [0.710, 0.772] | 0.735 |
+| Relabeled TUPAC16, manual labels (1,898 mitoses) | 0.734 | **0.751** [0.722, 0.777] | 0.734 [0.701, 0.769] | 0.735 |
+| Original TUPAC16 labels (1,552 mitoses)² | 0.665 | 0.675 | 0.657 | – |
+
+¹ arXiv 2607.28007 (2026): H-optimus-0 + RetinaNet trained on MIDOG++ and tested on the relabeled TUPAC16
+training set (71 cases; label variant not stated). Same data, but case selection and label variant may differ.
+² The original labels are known to miss mitoses (hence the relabeling), so precision against them is
+understated for every model.
+
+* **Both MitoGuard versions match or beat the best published external result.** v1 beats it by ~2 F1
+  points; v2 is on par.
+* **On this dataset v2 over-calls** (recall 0.82–0.84, precision 0.66–0.68). Its MIDOG++-tuned threshold is
+  too lenient for TUPAC16. With an oracle threshold all three systems rank candidates almost equally well
+  (best achievable F1 0.745 / 0.754 / 0.750). The ~1-point gap is a threshold-transfer cost, which is why
+  the per-site calibration discussed under site adaptation matters in practice.
+* TUPAC16 is breast cancer only, a tumour type represented in MIDOG++ training, so this tests lab and
+  scanner shift rather than tumour-type shift. The large v2 gains on unseen scanners *within* MIDOG++
+  (+20 F1) come from far stronger shifts.
+
 ### Site adaptation (honest results)
 
 Site adaptation fine-tunes the classifier on the new site's own unlabelled candidates (class-balanced

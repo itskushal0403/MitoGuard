@@ -39,6 +39,10 @@
 
 In-domain test (official MIDOG++ test split, demo model): F1 0.809.
 
+**External validation (TUPAC16, 73 breast cancer cases, no tuning):** F1 0.741 / 0.734 (relabeled, augmented /
+manual labels), precision 0.66–0.68 and recall 0.82–0.84. The MIDOG++-tuned threshold over-calls on this
+dataset; the best published result on the same set is 0.735.
+
 ### Performance by subgroup (F1, held-out)
 
 | Domain | F1 | | Domain | F1 |
@@ -66,8 +70,10 @@ In-domain test (official MIDOG++ test split, demo model): F1 0.809.
   but it was designed after observing the failure and needs confirmation on a fresh site.
 * **Label noise.** Ground truth is a consensus of 2–3 pathologists; individual pathologists disagree on a
   substantial share of figures, so F1 values near 0.8 approach the reference standard's own reliability.
-* **No evaluation** on whole slides, non-MIDOG scanners (e.g. Leica GT450, Philips), other species, or
-  prospective data.
+* **Threshold transfer.** The operating threshold is tuned on MIDOG++. On TUPAC16 it over-calls (recall 0.83,
+  precision 0.67), while on unseen MIDOG++ scanners it under-calls. Recalibrating per site with a few
+  labelled regions would remove most of this ~1-point cost.
+* **No evaluation** on whole slides, other species, or prospective data.
 
 ## Ethical considerations
 
